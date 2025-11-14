@@ -2,6 +2,10 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
 from datetime import datetime
+from airflow.operators.email import EmailOperator
+
+
+FILE_PATH = "/home/rafachem9/data-engineer/stock-market-analysis/src/"
 
 # -----------------------------
 # DAG settings
@@ -35,9 +39,22 @@ start = EmptyOperator(
 # -----------------------------
 run_script = BashOperator(
     task_id='execute_main_py',
-    bash_command='python3 /home/rafachem9/data-engineer/stock-market-analysis/src/main.py',
+    bash_command=f'python3 {FILE_PATH}main.py',
     dag=dag
 )
+
+send_email = EmailOperator(
+    task_id="send_email",
+    to="rafa.ramirez.9@gmail.com",
+    subject="Reporte diario con adjunto",
+    html_content="""
+    <h3>Hola,</h3>
+    <p>Adjunto el fichero con el reporte diario.</p>
+    """,
+    files=[FILE_PATH],
+    conn_id="my_smtp_connection",
+)
+
 
 # -----------------------------
 # Dummy end task
