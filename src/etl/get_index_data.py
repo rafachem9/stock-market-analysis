@@ -1,6 +1,6 @@
 import os
-from src.etl.functions import call_yf_api_historic, extraction_historic, analysis_stock_hist, save_extraction_historic_parquet, get_total_rank
-from src.etl.variables import DATA_DIR
+from etl.functions import call_yf_api_historic, extraction_historic, analysis_stock_hist, save_extraction_historic_parquet, get_total_rank
+from etl.variables import DATA_DIR
 import matplotlib.pyplot as plt
 import pandas as pd
 

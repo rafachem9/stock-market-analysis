@@ -2,7 +2,7 @@ from datetime import datetime
 import os
 
 # --- CONFIGURACIÓN DE DIRECTORIOS ---
-PROJECT_DIR = os.getcwd()
+PROJECT_DIR = '/home/rafachem9/data-engineer/stock-market-analysis/'
 DATA_DIR = os.path.join(PROJECT_DIR, 'data')
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
