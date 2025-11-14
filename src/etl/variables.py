@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 # --- CONFIGURACIÓN DE DIRECTORIOS ---
@@ -9,7 +9,7 @@ if not os.path.exists(DATA_DIR):
 
 
 start_period = datetime(2025, 1, 1)
-end_period = datetime(2025, 9, 11)
+end_period = datetime.today() - timedelta(days=1)
 
 
 ibex35_tickers = {
