@@ -1,15 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 # --- CONFIGURACIÓN DE DIRECTORIOS ---
-PROJECT_DIR = os.getcwd()
+PROJECT_DIR = '/home/rafachem9/data-engineer/stock-market-analysis/'
 DATA_DIR = os.path.join(PROJECT_DIR, 'data')
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
 
 start_period = datetime(2025, 1, 1)
-end_period = datetime(2025, 9, 11)
+end_period = datetime.today() - timedelta(days=1)
 
 
 ibex35_tickers = {

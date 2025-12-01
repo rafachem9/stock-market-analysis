@@ -1,6 +1,6 @@
 import os
-from src.etl.functions import call_yf_api_historic, extraction_historic, analysis_stock_hist, save_extraction_historic_parquet, get_total_rank
-from src.etl.variables import DATA_DIR
+from etl.functions import call_yf_api_historic, extraction_historic, analysis_stock_hist, save_extraction_historic_parquet, get_total_rank
+from etl.variables import DATA_DIR
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -23,12 +23,24 @@ def get_index(index_name, index_ticker, benchmark_ticker, start_period, end_peri
     analysis_df = get_total_rank(analysis_df, 'rank_dividend', [30, 70, 30])
 
     analysis_df = analysis_df.sort_values(by="rank_per", ascending=False)
-    ibex35_filename = os.path.join(DATA_DIR, index_filename)
-    analysis_df.to_csv(ibex35_filename, index=False)
+    index_filename_dir = os.path.join(DATA_DIR, index_filename)
+    analysis_df.to_csv(index_filename_dir, index=False)
 
     print(f"\n--- Resultados Top 30 {index_name} (por rank_per) ---")
     print(analysis_df.head(30))
-    print(f"Análisis del {index_name} guardado en: {ibex35_filename}")
+    print(f"Análisis del {index_name} guardado en: {index_filename_dir}")
+
+    print(f"Calculando Próximos dividendos para {index_name}...")
+
+    dividend_cols = ['Empresa', 'Ticker', 'Sector', 'Rentabilidad prevista', 'Ex-Dividend Date', 'Next Dividend',
+                     'Dividend Yield', 'rank_dividend']
+    dividen_df = analysis_df.loc[pd.to_datetime(analysis_df['Ex-Dividend Date']) >= end_period][dividend_cols].sort_values(
+        by='Dividend Yield', ascending=False)
+
+    dividend_filename_dir = os.path.join(DATA_DIR, f"dividendos_{index_filename}")
+    dividen_df.to_csv(dividend_filename_dir, index=False)
+
+    print(f"Análisis del Dividendo {index_name} guardado en: {dividend_filename_dir}")
 
     # --- GRÁFICO VOLATILIDAD {index_name} ---
     print(f"\nGenerando gráfico de volatilidad {index_name}...")
