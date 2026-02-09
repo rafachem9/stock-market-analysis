@@ -1,10 +1,14 @@
-from datetime import datetime, date
-import yfinance as yf
-import pandas as pd
-from tqdm import tqdm
-import numpy as np
-import statsmodels.api as sm
+import logging
 import os
+from datetime import datetime, date
+
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import yfinance as yf
+from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 def get_risk_free_rate():
     """
@@ -15,7 +19,7 @@ def get_risk_free_rate():
         t_bill = yf.Ticker("^IRX")
         data = t_bill.history(period="5d")  # últimos 5 días para evitar problemas de días festivos
         if data.empty:
-            print("No se pudieron obtener datos para ^IRX. Usando 0 como tasa libre de riesgo.")
+            logger.warning("No se pudieron obtener datos para ^IRX. Usando 0 como tasa libre de riesgo.")
             return 0.0
 
         last_yield = data["Close"].iloc[-1] / 100.0  # convertir % a decimal
@@ -24,7 +28,7 @@ def get_risk_free_rate():
         risk_free_daily = (1 + last_yield) ** (1 / 252) - 1
         return risk_free_daily
     except Exception as e:
-        print(f"Error al obtener tasa libre de riesgo: {e}. Usando 0.")
+        logger.error(f"Error al obtener tasa libre de riesgo: {e}. Usando 0.", exc_info=True)
         return 0.0
 
 
@@ -48,7 +52,7 @@ def load_extraction_historic_parquet(path="data_historic"):
     """
     data_his = {}
     if not os.path.exists(path):
-        print(f"Directorio no encontrado: {path}")
+        logger.warning(f"Directorio no encontrado: {path}")
         return data_his
 
     for file in os.listdir(path):
@@ -69,7 +73,7 @@ def load_extraction_historic_parquet(path="data_historic"):
                 else:
                     data_his[name] = df  # Fallback por si 'share_name' no se guardó
             except Exception as e:
-                print(f"Error al cargar {file}: {e}")
+                logger.error(f"Error al cargar {file}: {e}", exc_info=True)
     return data_his
 
 
@@ -140,7 +144,7 @@ def extraction_historic(start_period, end_period, tickers):
         try:
             data_his[name_ticker] = call_yf_api_historic(start_period, end_period, ticker)
         except Exception as e:
-            print(f"Error al descargar {ticker} ({name_ticker}): {e}")
+            logger.error(f"Error al descargar {ticker} ({name_ticker}): {e}", exc_info=True)
             data_his[name_ticker] = pd.DataFrame()  # DataFrame vacío si falla
     return data_his
 
@@ -189,12 +193,12 @@ def analysis_stock_hist(df_raw, tickers, bechmark_df):
 
     # Obtener la tasa libre de riesgo una vez
     risk_free_rate = get_risk_free_rate()
-    print(f"Tasa libre de riesgo diaria (T-Bill 3M): {risk_free_rate:.6f}")
+    logger.info(f"Tasa libre de riesgo diaria (T-Bill 3M): {risk_free_rate:.6f}")
 
     for name, df in tqdm(df_raw.items(), desc="Procesando tickers (análisis)"):
         ticker = next((k for k, v in tickers.items() if v == name), None)
         if ticker is None or df.empty or len(df) < 2:
-            print(f"Omitiendo {name} (ticker no encontrado o datos insuficientes)")
+            logger.debug(f"Omitiendo {name} (ticker no encontrado o datos insuficientes)")
             continue
 
         try:
@@ -282,7 +286,7 @@ def analysis_stock_hist(df_raw, tickers, bechmark_df):
                 "Next Dividend": next_dividend,
             })
         except Exception as e:
-            print(f"Error procesando el análisis de {name} ({ticker}): {e}")
+            logger.error(f"Error procesando el análisis de {name} ({ticker}): {e}", exc_info=True)
 
     df_ranking = pd.DataFrame(rows)
     return df_ranking.sort_values('Rentabilidad prevista', ascending=False, na_position='last')
@@ -318,5 +322,5 @@ def get_total_rank(df, rank_name, weight):
                 df_calc["Peso_PB"]
         )
     else:
-        print('La lista de pesos (weight) no tiene la longitud correcta (3).')
+        logger.warning('La lista de pesos (weight) no tiene la longitud correcta (3).')
     return df
