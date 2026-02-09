@@ -1,15 +1,13 @@
 from datetime import datetime, timedelta
-import os
+from dateutil.relativedelta import relativedelta
 
-# --- CONFIGURACIÓN DE DIRECTORIOS ---
-PROJECT_DIR = '/home/rafachem9/data-engineer/stock-market-analysis/'
-DATA_DIR = os.path.join(PROJECT_DIR, 'data')
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
+# Importar configuración centralizada
+from config import DATA_DIR, PROJECT_DIR, ANALYSIS_MONTHS_BACK
 
 
-start_period = datetime(2025, 1, 1)
+# Período de análisis configurable desde variables de entorno
 end_period = datetime.today() - timedelta(days=1)
+start_period = end_period - relativedelta(months=ANALYSIS_MONTHS_BACK)
 
 
 ibex35_tickers = {

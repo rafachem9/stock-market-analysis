@@ -1,11 +1,18 @@
+import os
+from datetime import datetime
+from pathlib import Path
+
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
-from datetime import datetime
 from airflow.operators.email import EmailOperator
 
 
-FILE_PATH = "/home/rafachem9/data-engineer/stock-market-analysis/src/"
+# Usar variable de entorno o directorio por defecto
+FILE_PATH = os.getenv(
+    'STOCK_ANALYSIS_SRC_PATH',
+    str(Path(__file__).parent.absolute()) + "/"
+)
 
 # -----------------------------
 # DAG settings
