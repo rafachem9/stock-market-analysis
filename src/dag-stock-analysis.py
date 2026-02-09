@@ -1,15 +1,34 @@
+import os
+from datetime import datetime
+from pathlib import Path
+
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
-from datetime import datetime
 from airflow.operators.email import EmailOperator
 
 # -----------------------------
 # settings
 # -----------------------------
 
-FILE_PATH = "/home/rafachem9/data-engineer/stock-market-analysis"
-EMAIL_LIST = ["rafachem9@gmail.com", "rafachem9@gmail.com"]
+# Directorio src (donde está main.py)
+SRC_DIR = os.getenv(
+    'STOCK_ANALYSIS_SRC_PATH',
+    str(Path(__file__).parent.absolute())
+)
+
+# Directorio de datos (un nivel arriba de src)
+DATA_DIR = os.getenv(
+    'STOCK_ANALYSIS_DATA_PATH',
+    str(Path(__file__).parent.parent.absolute() / 'data')
+)
+
+# Lista de emails para notificaciones (sin duplicados)
+EMAIL_LIST = ["rafachem9@gmail.com"]
+
+# Año actual para nombres de archivos
+CURRENT_YEAR = datetime.now().year
+
 # -----------------------------
 # DAG settings
 # -----------------------------
@@ -44,33 +63,36 @@ start = EmptyOperator(
 # -----------------------------
 run_script = BashOperator(
     task_id='execute_main_py',
-    bash_command=f'python3 {FILE_PATH}/src/main.py',
+    bash_command=f'python3 {SRC_DIR}/main.py',
     dag=dag
 )
 
 send_email = EmailOperator(
     task_id="send_email",
     to=EMAIL_LIST,
-    subject="Reporte diario con adjunto {{ ds }}",
-    html_content="""
-    <h3>Hola,</h3>
-    <p>Adjunto el fichero con el reporte diario.</p>
-    <img src="cid:sp500_volatility_2025.png" alt="Logo" style="width:200px;">
-    <img src="cid:etf_return_2025.png" alt="Logo" style="width:200px;">
-    <img src="cid:ibex_35_volatility_2025.png" alt="Logo" style="width:200px;">
-
+    subject="📊 Stock Market Analysis - Reporte {{ ds }}",
+    html_content=f"""
+    <h2>📈 Reporte Diario de Análisis Bursátil</h2>
+    <p>Adjunto encontrarás los análisis del IBEX 35 y S&P 500.</p>
+    
+    <h3>Gráficos incluidos:</h3>
+    <img src="cid:sp500_volatility_{CURRENT_YEAR}.png" alt="Volatilidad SP500" style="max-width:600px;">
+    <img src="cid:etf_return_{CURRENT_YEAR}.png" alt="Rentabilidad ETFs" style="max-width:600px;">
+    <img src="cid:ibex_35_volatility_{CURRENT_YEAR}.png" alt="Volatilidad IBEX 35" style="max-width:600px;">
+    
+    <p><em>Generado automáticamente por Stock Market Analysis</em></p>
     """,
     files=[
-        f"{FILE_PATH}/data/sp500_analysed_df.csv",
-                        f"{FILE_PATH}/data/dividendos_ibex35_analysed_df.csv",
-                        f"{FILE_PATH}/data/dividendos_sp500_analysed_df.csv",
-                        f"{FILE_PATH}/data/sp500_volatility_2025.png",
-                        f"{FILE_PATH}/data/etf_return_2025.png",
-                        f"{FILE_PATH}/data/ibex_35_volatility_2025.png",
-                        f"{FILE_PATH}/data/ibex35_analysed_df.csv"
+        f"{DATA_DIR}/sp500_analysed_df.csv",
+        f"{DATA_DIR}/ibex35_analysed_df.csv",
+        f"{DATA_DIR}/dividendos_sp500_analysed_df.csv",
+        f"{DATA_DIR}/dividendos_ibex35_analysed_df.csv",
+        f"{DATA_DIR}/sp500_volatility_{CURRENT_YEAR}.png",
+        f"{DATA_DIR}/etf_return_{CURRENT_YEAR}.png",
+        f"{DATA_DIR}/ibex_35_volatility_{CURRENT_YEAR}.png",
     ],
     conn_id="my_smtp_connection",
-    mime_subtype='related',                  # Necesario para manejar multipart MIME
+    mime_subtype='related',
 )
 
 
