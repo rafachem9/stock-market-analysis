@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 def get_index(index_name, index_ticker, benchmark_ticker, start_period, end_period, 
               index_folder, index_filename):
+    """Analiza un índice bursátil y genera gráficos."""
+    # Año para nombres de archivos (basado en fecha de fin del análisis)
+    analysis_year = end_period.year
+    
     logger.info(f"Iniciando análisis del {index_name}...")
 
     bechmark_ibex35 = call_yf_api_historic(start_period, end_period, benchmark_ticker)
@@ -90,12 +94,12 @@ def get_index(index_name, index_ticker, benchmark_ticker, start_period, end_peri
     ax.bar(range(len(vol_df_sorted)), vol_df_sorted["Volatilidad"].values)
     ax.set_xticks(range(len(vol_df_sorted)))
     ax.set_xticklabels(vol_df_sorted.index, rotation=90)
-    ax.set_title(f"Volatilidad Diaria (Std Dev de Daily Return) - {index_name} 2025")
+    ax.set_title(f"Volatilidad Diaria (Std Dev de Daily Return) - {index_name} {analysis_year}")
     ax.set_ylabel("Volatilidad")
     ax.grid(True)
     fig.tight_layout()
 
-    img_volatility_filename = os.path.join(DATA_DIR, f'{index_name.lower().replace(" ", "_")}_volatility_2025.png')
+    img_volatility_filename = os.path.join(DATA_DIR, f'{index_name.lower().replace(" ", "_")}_volatility_{analysis_year}.png')
     fig.savefig(img_volatility_filename)
     plt.close(fig)
     
@@ -104,13 +108,12 @@ def get_index(index_name, index_ticker, benchmark_ticker, start_period, end_peri
 
 
 def get_etf_data(tickers_index, start_period, end_period):
+    """Extrae y grafica datos de ETFs e índices."""
+    # Año para nombres de archivos
+    analysis_year = end_period.year
+    
     # Extracción histórica de índices/ETFs
     index_hist_df = extraction_historic(start_period, end_period, tickers_index)
-
-    # El análisis estaba comentado en el notebook original, se mantiene así.
-    # print("\nRealizando análisis de Índices/ETFs...")
-    # index_analysed_df = analysis_stock_hist(index_hist_df, tickers_index, bechmark_index_sp500)
-    # print(index_analysed_df)
 
     # --- GRÁFICOS ÍNDICES/ETFS ---
     logger.info("Generando gráficos de Índices/ETFs...")
@@ -121,13 +124,13 @@ def get_etf_data(tickers_index, start_period, end_period):
         if not data.empty:
             ax1.plot(data.index, data["Cumulative Return"].rolling(window=5).mean(), label=ticker)
 
-    ax1.set_title("Rentabilidad Acumulada (Índices/ETFs) - 2025")
+    ax1.set_title(f"Rentabilidad Acumulada (Índices/ETFs) - {analysis_year}")
     ax1.set_xlabel("Fecha")
     ax1.set_ylabel("Rentabilidad Acumulada")
     ax1.legend()
     ax1.grid(True)
     fig1.tight_layout()
-    img_return_filename = os.path.join(DATA_DIR, 'etf_return_2025.png')
+    img_return_filename = os.path.join(DATA_DIR, f'etf_return_{analysis_year}.png')
     fig1.savefig(img_return_filename)
     plt.close(fig1)
 
@@ -143,12 +146,12 @@ def get_etf_data(tickers_index, start_period, end_period):
     ax2.bar(range(len(vol_df_sorted)), vol_df_sorted["Volatilidad"].values)
     ax2.set_xticks(range(len(vol_df_sorted)))
     ax2.set_xticklabels(vol_df_sorted.index, rotation=90)
-    ax2.set_title("Volatilidad Diaria (Std Dev de Daily Return) - Índices/ETFs 2025")
+    ax2.set_title(f"Volatilidad Diaria (Std Dev de Daily Return) - Índices/ETFs {analysis_year}")
     ax2.set_ylabel("Volatilidad")
     ax2.grid(True)
     fig2.tight_layout()
 
-    img_volatility_filename = os.path.join(DATA_DIR, 'etf_volatility_2025.png')
+    img_volatility_filename = os.path.join(DATA_DIR, f'etf_volatility_{analysis_year}.png')
     fig2.savefig(img_volatility_filename)
     plt.close(fig2)
 
