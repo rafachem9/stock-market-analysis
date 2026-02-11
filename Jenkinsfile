@@ -11,9 +11,9 @@ pipeline {
         // CONFIGURACIÓN - MODIFICAR SEGÚN TU ENTORNO
         // =============================================
         
-        PROJECT_DIR = '/home/pi/projects/stock-market-analysis'
+        PROJECT_DIR = '/home/rafachem9/data-engineer/stock-market-analysis'
         VENV_PYTHON = "${PROJECT_DIR}/.venv/bin/python"
-        GIT_BRANCH = 'main'
+        GIT_BRANCH = 'dev-cursor'
     }
     
     options {
