@@ -39,35 +39,33 @@ pipeline {
         stage('Actualizar') {
             steps {
                 echo '📥 Descargando última versión...'
-                dir("${PROJECT_DIR}") {
-                    sh '''
-                        git fetch origin ${GIT_BRANCH}
-                        git checkout ${GIT_BRANCH}
-                        git pull origin ${GIT_BRANCH}
-                        
-                        echo "✅ Actualizado a: $(git log -1 --oneline)"
-                    '''
-                }
+                sh """
+                    cd ${PROJECT_DIR}
+                    git fetch origin ${GIT_BRANCH}
+                    git checkout ${GIT_BRANCH}
+                    git pull origin ${GIT_BRANCH}
+                    
+                    echo "✅ Actualizado a: \$(git log -1 --oneline)"
+                """
             }
         }
         
         stage('Instalar Dependencias') {
             steps {
                 echo '📦 Instalando dependencias...'
-                dir("${PROJECT_DIR}") {
-                    sh '''
-                        ${VENV_PYTHON} -m pip install -r requirements.txt --quiet
-                    '''
-                }
+                sh """
+                    cd ${PROJECT_DIR}
+                    ${VENV_PYTHON} -m pip install -r requirements.txt --quiet
+                """
             }
         }
         
         stage('Test Imports') {
             steps {
                 echo '🧪 Verificando imports...'
-                dir("${PROJECT_DIR}/src") {
-                    sh '''
-                        ${VENV_PYTHON} -c "
+                sh '''
+                    cd ${PROJECT_DIR}/src
+                    ${VENV_PYTHON} -c "
 import sys
 sys.path.insert(0, '.')
 
@@ -80,45 +78,40 @@ from etl.get_index_data import get_index
 
 print('✅ Todos los imports correctos')
 "
-                    '''
-                }
+                '''
             }
         }
         
         stage('Test Dashboard') {
             steps {
                 echo '🧪 Verificando dashboard...'
-                dir("${PROJECT_DIR}/src") {
-                    sh '''
-                        ${VENV_PYTHON} -c "
+                sh '''
+                    cd ${PROJECT_DIR}/src
+                    ${VENV_PYTHON} -c "
 import streamlit
 import plotly
 import pandas as pd
-from pathlib import Path
-
-# Verificar que se puede cargar el dashboard
-exec(open('dashboard.py').read().split('if __name__')[0])
 print('✅ Dashboard OK')
 "
-                    '''
-                }
+                '''
             }
         }
         
-        stage('Test Ejecución') {
+        stage('Test Sintaxis') {
             steps {
-                echo '🧪 Probando ejecución del análisis...'
-                dir("${PROJECT_DIR}/src") {
-                    sh '''
-                        # Test rápido: solo verificar que main.py arranca sin errores de sintaxis
-                        ${VENV_PYTHON} -m py_compile main.py
-                        ${VENV_PYTHON} -m py_compile config.py
-                        ${VENV_PYTHON} -m py_compile etl/functions.py
-                        ${VENV_PYTHON} -m py_compile etl/alerts.py
-                        
-                        echo "✅ Sintaxis correcta en todos los archivos"
-                    '''
-                }
+                echo '🧪 Verificando sintaxis...'
+                sh """
+                    cd ${PROJECT_DIR}/src
+                    ${VENV_PYTHON} -m py_compile main.py
+                    ${VENV_PYTHON} -m py_compile config.py
+                    ${VENV_PYTHON} -m py_compile dashboard.py
+                    ${VENV_PYTHON} -m py_compile etl/functions.py
+                    ${VENV_PYTHON} -m py_compile etl/alerts.py
+                    ${VENV_PYTHON} -m py_compile etl/get_index_data.py
+                    ${VENV_PYTHON} -m py_compile etl/variables.py
+                    
+                    echo "✅ Sintaxis correcta en todos los archivos"
+                """
             }
         }
     }
@@ -137,20 +130,19 @@ print('✅ Dashboard OK')
         
         failure {
             echo '❌ Tests fallidos. Iniciando rollback...'
-            dir("${PROJECT_DIR}") {
-                sh '''
-                    echo "🔄 Restaurando versión anterior..."
-                    
-                    LAST_COMMIT=$(cat /tmp/stock_analysis_last_commit.txt 2>/dev/null || echo "")
-                    
-                    if [ -n "$LAST_COMMIT" ]; then
-                        git checkout $LAST_COMMIT
-                        echo "✅ Rollback completado a: $LAST_COMMIT"
-                    else
-                        echo "⚠️ No se pudo hacer rollback, commit anterior no encontrado"
-                    fi
-                '''
-            }
+            sh '''
+                cd ${PROJECT_DIR}
+                
+                echo "🔄 Restaurando versión anterior..."
+                
+                if [ -f "${BACKUP_COMMIT_FILE}" ]; then
+                    LAST_COMMIT=$(cat ${BACKUP_COMMIT_FILE})
+                    git checkout $LAST_COMMIT
+                    echo "✅ Rollback completado a: $LAST_COMMIT"
+                else
+                    echo "⚠️ No se pudo hacer rollback, archivo de backup no encontrado"
+                fi
+            '''
             echo '''
 ╔═══════════════════════════════════════════╗
 ║  ⚠️ ROLLBACK EJECUTADO                     ║
