@@ -62,7 +62,13 @@ def load_data(path: Path):
     if "next_ex_div" in open_df.columns:
         open_df["next_ex_div"] = pd.to_datetime(open_df["next_ex_div"], errors="coerce")
 
-    for col in ["coste_total", "comisiones"]:
+    # Compatibilidad con CSVs nuevos: main.py exporta comisiones de compra
+    # de posiciones cerradas como "comisiones_compra", pero el dashboard
+    # sigue consumiendo "comisiones" en otras partes.
+    if "comisiones" not in sold_df.columns and "comisiones_compra" in sold_df.columns:
+        sold_df["comisiones"] = sold_df["comisiones_compra"]
+
+    for col in ["coste_total", "comisiones", "comisiones_compra"]:
         if col in sold_df.columns:
             sold_df[col] = pd.to_numeric(sold_df[col], errors="coerce")
 
