@@ -12,8 +12,9 @@ pipeline {
         // =============================================
 
         PROJECT_DIR        = "${WORKSPACE}"
+        // Venv creado dentro del workspace para que Jenkins tenga permisos
         VENV_PYTHON        = "${PROJECT_DIR}/.venv/bin/python"
-        GIT_BRANCH         = 'dev-cursor'
+        GIT_BRANCH         = 'main'
         // Ruta fija para el archivo de backup del commit (usada en rollback)
         BACKUP_COMMIT_FILE = '/tmp/stock_analysis_last_commit.txt'
     }
