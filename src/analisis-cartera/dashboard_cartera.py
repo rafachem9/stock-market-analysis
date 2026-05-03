@@ -430,8 +430,8 @@ with tab4:
         st.subheader("Detalle de fondos")
         fund_display = fund_df[["empresa", "invertido", "aportaciones"]].copy()
         fund_display.columns = ["Fondo", "Invertido €", "Aportaciones"]
-        fund_display["Invertido €"] = fund_display["Invertido €"].apply(lambda v: f"{v:,.2f}")
         fund_display = fund_display.sort_values("Invertido €", ascending=False)
+        fund_display["Invertido €"] = fund_display["Invertido €"].apply(lambda v: f"{v:,.2f}")
         st.dataframe(fund_display, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------------------------
