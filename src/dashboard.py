@@ -14,8 +14,11 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from pathlib import Path
 from datetime import datetime
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+import config as _config
 
 # Configuración de la página
 st.set_page_config(
@@ -29,7 +32,7 @@ st.set_page_config(
 # CONFIGURACIÓN
 # =============================================================================
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = _config.DATA_DIR
 
 # Umbrales de análisis
 RSI_OVERSOLD = 30
