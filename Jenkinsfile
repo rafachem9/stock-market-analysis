@@ -12,8 +12,8 @@ pipeline {
         // =============================================
         
         PROJECT_DIR = "${WORKSPACE}"
-        VENV_PYTHON = "${PROJECT_DIR}/.venv/bin/python"
-        GIT_BRANCH = 'dev-cursor'
+        VENV_PYTHON = "/home/rafachem9/repositories/repos-venv/stock-airflow"
+        GIT_BRANCH = 'main'
     }
     
     options {
