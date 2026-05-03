@@ -8,10 +8,10 @@ pipeline {
     
     environment {
         // =============================================
-        // CONFIGURACIÓN - MODIFICAR SEGÚN TU ENTORNO
+        // CONFIGURACIÓN - BASADA EN EL WORKSPACE DE JENKINS
         // =============================================
         
-        PROJECT_DIR = '/home/rafachem9/data-engineer/stock-market-analysis'
+        PROJECT_DIR = "${WORKSPACE}"
         VENV_PYTHON = "${PROJECT_DIR}/.venv/bin/python"
         GIT_BRANCH = 'dev-cursor'
     }
