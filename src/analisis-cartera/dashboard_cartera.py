@@ -41,8 +41,8 @@ st.markdown("""
 # Carga de datos
 # ---------------------------------------------------------------------------
 
-CSV_PATH = Path(__file__).parent / "cartera_actualizada.csv"
-
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CSV_PATH = PROJECT_ROOT / "data" / "cartera_actualizada.csv"
 
 @st.cache_data(ttl=300)
 def load_data(path: Path):

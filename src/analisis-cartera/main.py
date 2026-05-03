@@ -15,7 +15,7 @@ Lee un fichero CSV con las operaciones de compra/venta y:
 Uso:
     python main.py [ruta_al_csv]
 
-Si no se pasa argumento, busca 'cartera.csv' en el directorio actual.
+Si no se pasa argumento, busca 'data/cartera.csv' en la raíz del proyecto.
 El separador se detecta automáticamente (coma, punto y coma o tabulador).
 Genera 'cartera_actualizada.csv' en el mismo directorio que el CSV de entrada.
 """
@@ -33,7 +33,8 @@ warnings.filterwarnings("ignore")
 # Configuración
 # ---------------------------------------------------------------------------
 
-DEFAULT_CSV_PATH = "cartera.csv"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CSV_PATH = PROJECT_ROOT / "data" / "cartera.csv"
 
 # Columnas esperadas en el Excel (minúsculas, sin espacios extra)
 COL_MAP = {
@@ -56,6 +57,14 @@ COL_MAP = {
     "fee_in": "comision",
     "invertido total": "invertido_total",
     "invertido_total": "invertido_total",
+    # Columnas de venta (solo aplican a filas SOLD)
+    "share price now": "precio_venta",
+    "share_price_now": "precio_venta",
+    "liquido": "liquido",
+    "fee out": "comision_venta",
+    "fee_out": "comision_venta",
+    "gross earning": "ganancia_bruta",
+    "gross_earning": "ganancia_bruta",
 }
 
 EXCHANGE_SUFFIX = {
@@ -171,10 +180,8 @@ def load_portfolio(path: str) -> pd.DataFrame:
 
     rename = {}
     for col in df.columns:
-        for key, target in COL_MAP.items():
-            if col == key or col.startswith(key):
-                rename[col] = target
-                break
+        if col in COL_MAP:
+            rename[col] = COL_MAP[col]
     df = df.rename(columns=rename)
 
     required = ["empresa", "estado"]
@@ -190,10 +197,16 @@ def load_portfolio(path: str) -> pd.DataFrame:
     df["estado"] = df["estado"].astype(str).str.upper().str.strip()
     df = df[df["estado"].isin(["BOUGHT", "SOLD", "FUND"])]
 
-    # Conversión de tipos
+    # Conversión de tipos — columnas de compra
     for col in ["precio_compra", "comision", "invertido_total"]:
         if col in df.columns:
             df[col] = df[col].apply(parse_euro)
+
+    # Columnas de venta: parsear y luego ignorar en filas BOUGHT
+    for col in ["precio_venta", "liquido", "comision_venta", "ganancia_bruta"]:
+        if col in df.columns:
+            df[col] = df[col].apply(parse_euro)
+            df.loc[df["estado"] != "SOLD", col] = pd.NA
 
     # Recalcular acciones desde precio y total para evitar problemas de formato CSV
     # (el CSV exporta '20,000' European como '20000', perdiendo el decimal)
@@ -342,15 +355,28 @@ def analyse_closed_positions(df: pd.DataFrame) -> pd.DataFrame:
     if sold.empty:
         return pd.DataFrame()
 
+    agg: dict = {
+        "coste_total": ("invertido_total", "sum"),
+        "comisiones_compra": ("comision", "sum"),
+        "operaciones": ("empresa", "count"),
+    }
+    if "liquido" in sold.columns:
+        agg["liquido_total"] = ("liquido", "sum")
+    if "comision_venta" in sold.columns:
+        agg["comisiones_venta"] = ("comision_venta", "sum")
+    if "ganancia_bruta" in sold.columns:
+        agg["ganancia_bruta"] = ("ganancia_bruta", "sum")
+
     grp = (
         sold.groupby(["empresa", "indice", "tipo"])
-        .agg(
-            coste_total=("invertido_total", "sum"),
-            comisiones=("comision", "sum"),
-            operaciones=("empresa", "count"),
-        )
+        .agg(**agg)
         .reset_index()
     )
+
+    if "liquido_total" in grp.columns:
+        grp["pnl"] = grp["liquido_total"] - grp["coste_total"]
+        grp["pnl_pct"] = (grp["pnl"] / grp["coste_total"]) * 100
+
     return grp
 
 
@@ -431,26 +457,41 @@ def print_closed_positions(grp: pd.DataFrame):
         print("  Sin posiciones cerradas.")
         return
 
-    col_w = [28, 14, 8, 14, 8]
+    has_pnl = "pnl" in grp.columns
+
+    col_w = [28, 14, 8, 14, 12, 10, 8]
     header = (
         f"{'Empresa':<{col_w[0]}} {'Índice':<{col_w[1]}} {'Tipo':<{col_w[2]}} "
-        f"{'Coste total':>{col_w[3]}} {'Ops':>{col_w[4]}}"
+        f"{'Coste total':>{col_w[3]}} {'Líquido':>{col_w[4]}} {'P&L':>{col_w[5]}} {'Ops':>{col_w[6]}}"
     )
     print(f"\n{header}")
-    print("-" * (sum(col_w) + 4))
+    print("-" * sum(col_w))
 
     for _, r in grp.sort_values("coste_total", ascending=False).iterrows():
+        if has_pnl and pd.notna(r.get("pnl")):
+            liquido_str = fmt(r["liquido_total"])
+            pnl_str = fmt(r["pnl"])
+        else:
+            liquido_str = "N/D"
+            pnl_str = "N/D"
         print(
             f"{str(r['empresa']):<{col_w[0]}} "
             f"{str(r['indice']):<{col_w[1]}} "
             f"{str(r['tipo']):<{col_w[2]}} "
             f"{fmt(r['coste_total']):>{col_w[3]}} "
-            f"{int(r['operaciones']):>{col_w[4]}}"
+            f"{liquido_str:>{col_w[4]}} "
+            f"{pnl_str:>{col_w[5]}} "
+            f"{int(r['operaciones']):>{col_w[6]}}"
         )
 
-    print("-" * (sum(col_w) + 4))
+    print("-" * sum(col_w))
     print(f"\n  Total coste base (cerrado):  {fmt(grp['coste_total'].sum())}")
-    print(f"  Nota: precio de venta no disponible en el Excel → P&L cerrado no calculable.")
+    if has_pnl:
+        total_liquido = grp["liquido_total"].sum()
+        total_pnl = grp["pnl"].sum()
+        total_coste = grp["coste_total"].sum()
+        print(f"  Total líquido obtenido:      {fmt(total_liquido)}")
+        print(f"  P&L realizado total:         {fmt(total_pnl)}  ({pct(total_pnl / total_coste * 100)})")
 
 
 def print_funds(grp: pd.DataFrame):
@@ -521,7 +562,7 @@ def print_dividends(grp: pd.DataFrame):
         print(f"\n  Sin datos de dividendo: {empresas}")
 
 
-def print_summary(df: pd.DataFrame, open_grp: pd.DataFrame):
+def print_summary(df: pd.DataFrame, open_grp: pd.DataFrame, closed_grp: pd.DataFrame):
     section("RESUMEN GLOBAL DE LA CARTERA")
 
     total_comprado = df["invertido_total"].sum()
@@ -539,6 +580,12 @@ def print_summary(df: pd.DataFrame, open_grp: pd.DataFrame):
         pnl_total = open_grp["pnl"].sum()
         print(f"\n  Valor actual cartera abierta:  {fmt(valor_actual)}")
         print(f"  P&L latente estimado:          {fmt(pnl_total)}  ({pct(pnl_total / total_abierto * 100)})")
+
+    # P&L realizado de posiciones cerradas
+    if not closed_grp.empty and "pnl" in closed_grp.columns:
+        pnl_cerrado = closed_grp["pnl"].sum()
+        total_cerrado_base = closed_grp["coste_total"].sum()
+        print(f"\n  P&L realizado (cerradas):      {fmt(pnl_cerrado)}  ({pct(pnl_cerrado / total_cerrado_base * 100)})")
 
     # Por tipo
     print(f"\n  {'Desglose por tipo':─<40}")
@@ -580,9 +627,11 @@ def export_updated_csv(open_grp: pd.DataFrame, closed_grp: pd.DataFrame,
         frames.append(open_out)
 
     if not closed_grp.empty:
-        closed_out = closed_grp[[
-            "empresa", "indice", "tipo", "coste_total", "comisiones", "operaciones",
-        ]].copy()
+        closed_cols = ["empresa", "indice", "tipo", "coste_total", "comisiones_compra", "operaciones"]
+        for extra in ["liquido_total", "comisiones_venta", "ganancia_bruta", "pnl", "pnl_pct"]:
+            if extra in closed_grp.columns:
+                closed_cols.append(extra)
+        closed_out = closed_grp[closed_cols].copy()
         closed_out.insert(0, "estado", "SOLD")
         frames.append(closed_out)
 
@@ -616,14 +665,15 @@ def export_updated_csv(open_grp: pd.DataFrame, closed_grp: pd.DataFrame,
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CSV_PATH
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_CSV_PATH
 
-    if not Path(path).exists():
+    if not path.exists():
         print(f"ERROR: No se encontró el fichero '{path}'.")
-        print(f"Uso: python main.py <ruta_al_csv>")
+        print("Uso: python main.py [ruta_al_csv]")
+        print(f"Ruta por defecto: {DEFAULT_CSV_PATH}")
         sys.exit(1)
 
-    df = load_portfolio(path)
+    df = load_portfolio(str(path))
 
     open_grp = analyse_open_positions(df)
     closed_grp = analyse_closed_positions(df)
@@ -633,9 +683,9 @@ def main():
     print_closed_positions(closed_grp)
     print_funds(fund_grp)
     print_dividends(open_grp)
-    print_summary(df, open_grp)
+    print_summary(df, open_grp, closed_grp)
 
-    output_path = str(Path(path).parent / "cartera_actualizada.csv")
+    output_path = str(path.parent / "cartera_actualizada.csv")
     section("EXPORTANDO DATOS ACTUALIZADOS")
     export_updated_csv(open_grp, closed_grp, fund_grp, output_path)
 
