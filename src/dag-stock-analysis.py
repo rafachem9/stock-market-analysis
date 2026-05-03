@@ -59,7 +59,7 @@ start = EmptyOperator(
 )
 
 # -----------------------------
-# Task: run Python script
+# Task: análisis de mercado (IBEX 35 / S&P 500 / ETFs)
 # -----------------------------
 run_script = BashOperator(
     task_id='execute_main_py',
@@ -67,19 +67,31 @@ run_script = BashOperator(
     dag=dag
 )
 
+# -----------------------------
+# Task: análisis de cartera personal
+# -----------------------------
+run_cartera = BashOperator(
+    task_id='execute_analisis_cartera',
+    bash_command=f'python3 {SRC_DIR}/analisis-cartera/main.py',
+    dag=dag
+)
+
+# -----------------------------
+# Task: enviar email con todos los resultados
+# -----------------------------
 send_email = EmailOperator(
     task_id="send_email",
     to=EMAIL_LIST,
     subject="📊 Stock Market Analysis - Reporte {{ ds }}",
     html_content=f"""
     <h2>📈 Reporte Diario de Análisis Bursátil</h2>
-    <p>Adjunto encontrarás los análisis del IBEX 35 y S&P 500.</p>
-    
+    <p>Adjunto encontrarás los análisis del IBEX 35, S&P 500 y tu cartera personal.</p>
+
     <h3>Gráficos incluidos:</h3>
     <img src="cid:sp500_volatility_{CURRENT_YEAR}.png" alt="Volatilidad SP500" style="max-width:600px;">
     <img src="cid:etf_return_{CURRENT_YEAR}.png" alt="Rentabilidad ETFs" style="max-width:600px;">
     <img src="cid:ibex_35_volatility_{CURRENT_YEAR}.png" alt="Volatilidad IBEX 35" style="max-width:600px;">
-    
+
     <p><em>Generado automáticamente por Stock Market Analysis</em></p>
     """,
     files=[
@@ -90,6 +102,7 @@ send_email = EmailOperator(
         f"{DATA_DIR}/sp500_volatility_{CURRENT_YEAR}.png",
         f"{DATA_DIR}/etf_return_{CURRENT_YEAR}.png",
         f"{DATA_DIR}/ibex_35_volatility_{CURRENT_YEAR}.png",
+        f"{DATA_DIR}/cartera_actualizada.csv",
     ],
     conn_id="my_smtp_connection",
     mime_subtype='related',
@@ -106,6 +119,7 @@ end = EmptyOperator(
 
 # -----------------------------
 # Task dependencies
+# run_script y run_cartera se ejecutan en paralelo;
+# el email se envía solo cuando ambos terminan.
 # -----------------------------
-start >> run_script >> send_email >> end
-
+start >> [run_script, run_cartera] >> send_email >> end
