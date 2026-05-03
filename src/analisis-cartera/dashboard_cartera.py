@@ -68,7 +68,8 @@ def load_data(path: Path):
     if "comisiones" not in sold_df.columns and "comisiones_compra" in sold_df.columns:
         sold_df["comisiones"] = sold_df["comisiones_compra"]
 
-    for col in ["coste_total", "comisiones", "comisiones_compra"]:
+    for col in ["coste_total", "comisiones", "comisiones_compra",
+                "pnl", "pnl_pct", "liquido_total"]:
         if col in sold_df.columns:
             sold_df[col] = pd.to_numeric(sold_df[col], errors="coerce")
 
@@ -353,26 +354,57 @@ with tab3:
         st.info("Sin posiciones cerradas.")
     else:
         total_cerrado = sold_df["coste_total"].sum()
-        st.metric("Total coste base (cerrado)", f"{total_cerrado:,.2f} €")
-        st.caption("El precio de venta no está en el CSV → P&L realizado no calculable desde estos datos.")
+        has_pnl = "pnl" in sold_df.columns and sold_df["pnl"].notna().any()
+
+        # Métricas
+        if has_pnl:
+            pnl_realizado = sold_df["pnl"].sum()
+            pnl_pct_realizado = (pnl_realizado / total_cerrado * 100) if total_cerrado else 0
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total coste base (cerrado)", f"{total_cerrado:,.2f} €")
+            if "liquido_total" in sold_df.columns and sold_df["liquido_total"].notna().any():
+                m2.metric("Total líquido obtenido", f"{sold_df['liquido_total'].sum():,.2f} €")
+            m3.metric("P&L realizado", f"{pnl_realizado:,.2f} €", f"{pnl_pct_realizado:+.2f}%")
+        else:
+            st.metric("Total coste base (cerrado)", f"{total_cerrado:,.2f} €")
+            st.caption("Añade columnas 'liquido' y 'fee_out' en el CSV de origen para ver el P&L realizado.")
 
         c1, c2 = st.columns([3, 2])
 
         with c1:
-            st.subheader("Coste base por empresa")
-            s_sorted = sold_df.sort_values("coste_total", ascending=True)
-            fig_s = go.Figure(go.Bar(
-                y=s_sorted["empresa"], x=s_sorted["coste_total"],
-                orientation="h", marker_color="#5b7fa6",
-                text=s_sorted["coste_total"].apply(lambda v: f"{v:,.0f} €"),
-                textposition="outside",
-            ))
-            fig_s.update_layout(
-                height=max(350, len(s_sorted) * 22),
-                margin=dict(l=0, r=80, t=10, b=10),
-                xaxis_title="€",
-            )
-            st.plotly_chart(fig_s, use_container_width=True)
+            if has_pnl:
+                st.subheader("P&L realizado por empresa")
+                pnl_sorted = sold_df.dropna(subset=["pnl"]).sort_values("pnl")
+                colors_pnl = ["#ff4b4b" if v < 0 else "#00cc88" for v in pnl_sorted["pnl"]]
+                fig_pnl = go.Figure(go.Bar(
+                    y=pnl_sorted["empresa"], x=pnl_sorted["pnl"],
+                    orientation="h",
+                    marker_color=colors_pnl,
+                    text=pnl_sorted["pnl"].apply(lambda v: f"{v:+,.0f} €"),
+                    textposition="outside",
+                ))
+                fig_pnl.add_vline(x=0, line_color="white", line_width=1, opacity=0.4)
+                fig_pnl.update_layout(
+                    height=max(350, len(pnl_sorted) * 22),
+                    margin=dict(l=0, r=80, t=10, b=10),
+                    xaxis_title="€",
+                )
+                st.plotly_chart(fig_pnl, use_container_width=True)
+            else:
+                st.subheader("Coste base por empresa")
+                s_sorted = sold_df.sort_values("coste_total", ascending=True)
+                fig_s = go.Figure(go.Bar(
+                    y=s_sorted["empresa"], x=s_sorted["coste_total"],
+                    orientation="h", marker_color="#5b7fa6",
+                    text=s_sorted["coste_total"].apply(lambda v: f"{v:,.0f} €"),
+                    textposition="outside",
+                ))
+                fig_s.update_layout(
+                    height=max(350, len(s_sorted) * 22),
+                    margin=dict(l=0, r=80, t=10, b=10),
+                    xaxis_title="€",
+                )
+                st.plotly_chart(fig_s, use_container_width=True)
 
         with c2:
             st.subheader("Distribución por tipo")
@@ -386,12 +418,41 @@ with tab3:
             st.plotly_chart(fig_t, use_container_width=True)
 
         st.subheader("Tabla de posiciones cerradas")
-        sold_display = sold_df[["empresa", "indice", "tipo", "coste_total", "comisiones", "operaciones"]].copy()
-        sold_display = sold_display.sort_values("coste_total", ascending=False)
-        sold_display.columns = ["Empresa", "Índice", "Tipo", "Coste €", "Comisiones €", "Operaciones"]
-        sold_display["Coste €"] = sold_display["Coste €"].apply(lambda v: f"{v:,.2f}")
-        sold_display["Comisiones €"] = sold_display["Comisiones €"].apply(lambda v: f"{v:,.2f}")
-        st.dataframe(sold_display, use_container_width=True, hide_index=True)
+        base_cols = ["empresa", "indice", "tipo", "coste_total", "comisiones", "operaciones"]
+        extra_cols = [c for c in ["liquido_total", "pnl", "pnl_pct"] if c in sold_df.columns]
+        avail_cols = [c for c in base_cols + extra_cols if c in sold_df.columns]
+        sold_display = sold_df[avail_cols].copy().sort_values("coste_total", ascending=False)
+        sold_display = sold_display.rename(columns={
+            "empresa": "Empresa", "indice": "Índice", "tipo": "Tipo",
+            "coste_total": "Coste €", "comisiones": "Comisiones €",
+            "operaciones": "Operaciones", "liquido_total": "Líquido €",
+            "pnl": "P&L €", "pnl_pct": "P&L %",
+        })
+        for col in ["Coste €", "Comisiones €", "Líquido €", "P&L €"]:
+            if col in sold_display.columns:
+                sold_display[col] = sold_display[col].apply(
+                    lambda v: f"{v:,.2f}" if pd.notna(v) else "—"
+                )
+        if "P&L %" in sold_display.columns:
+            sold_display["P&L %"] = sold_display["P&L %"].apply(
+                lambda v: f"{v:+.2f}%" if pd.notna(v) else "—"
+            )
+
+        def color_pnl_sold(val):
+            try:
+                clean = str(val).replace("%", "").replace(",", "").replace("€", "").replace("+", "").strip()
+                return "color: #00cc88" if float(clean) >= 0 else "color: #ff4b4b"
+            except Exception:
+                return ""
+
+        style_cols = [c for c in ["P&L €", "P&L %"] if c in sold_display.columns]
+        if style_cols:
+            st.dataframe(
+                sold_display.style.applymap(color_pnl_sold, subset=style_cols),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.dataframe(sold_display, use_container_width=True, hide_index=True)
 
 # ===========================================================================
 # TAB 4 — Fondos
