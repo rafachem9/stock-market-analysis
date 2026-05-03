@@ -419,7 +419,7 @@ def render_top_opportunities(df, title, n=10):
         )
     if 'Dividend Yield' in display_df.columns:
         display_df['Dividend Yield'] = display_df['Dividend Yield'].apply(
-            lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
+            lambda x: f"{x * 100:.2f}%" if pd.notna(x) else "-"
         )
     if 'Investment Score' in display_df.columns:
         display_df['Investment Score'] = display_df['Investment Score'].apply(
