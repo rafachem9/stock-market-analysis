@@ -570,7 +570,7 @@ def render_summary_metrics(df, index_name):
     
     with col4:
         if 'Dividend Yield' in df.columns:
-            high_div = (df['Dividend Yield'] > 3).sum()
+            high_div = (df['Dividend Yield'] > 0.03).sum()
             st.metric("Dividendo > 3%", high_div)
     
     with col5:
