@@ -56,13 +56,19 @@ pipeline {
                 echo '📦 Preparando entorno virtual e instalando dependencias...'
                 sh """
                     cd ${PROJECT_DIR}
-                    # Crear el venv si no existe todavía
-                    if [ ! -f ${VENV_PYTHON} ]; then
-                        echo "🔧 Creando entorno virtual..."
+                    # Recrear el venv si no existe o si requirements.txt cambió
+                    REQS_HASH=\$(sha256sum requirements.txt | cut -d' ' -f1)
+                    HASH_FILE=".venv/.reqs_hash"
+                    if [ ! -f "${VENV_PYTHON}" ] || [ ! -f "\${HASH_FILE}" ] || [ "\${REQS_HASH}" != "\$(cat \${HASH_FILE})" ]; then
+                        echo "🔧 Recreando entorno virtual (dependencias cambiaron)..."
+                        rm -rf .venv
                         python3 -m venv .venv
+                        ${VENV_PYTHON} -m pip install --upgrade pip --quiet
+                        ${VENV_PYTHON} -m pip install -r requirements.txt --quiet --no-cache-dir
+                        echo "\${REQS_HASH}" > "\${HASH_FILE}"
+                    else
+                        echo "✅ Entorno virtual ya está actualizado"
                     fi
-                    ${VENV_PYTHON} -m pip install --upgrade pip --quiet
-                    ${VENV_PYTHON} -m pip install -r requirements.txt --quiet
                     echo "✅ Dependencias instaladas"
                 """
             }
