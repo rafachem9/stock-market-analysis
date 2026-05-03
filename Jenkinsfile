@@ -13,7 +13,7 @@ pipeline {
         
         PROJECT_DIR = "${WORKSPACE}"
         VENV_PYTHON = "${PROJECT_DIR}/.venv/bin/python"
-        GIT_BRANCH = 'dev-cursor'
+        GIT_BRANCH = 'main'
     }
     
     options {
