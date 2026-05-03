@@ -387,10 +387,10 @@ with tab3:
 
         st.subheader("Tabla de posiciones cerradas")
         sold_display = sold_df[["empresa", "indice", "tipo", "coste_total", "comisiones", "operaciones"]].copy()
+        sold_display = sold_display.sort_values("coste_total", ascending=False)
         sold_display.columns = ["Empresa", "Índice", "Tipo", "Coste €", "Comisiones €", "Operaciones"]
         sold_display["Coste €"] = sold_display["Coste €"].apply(lambda v: f"{v:,.2f}")
         sold_display["Comisiones €"] = sold_display["Comisiones €"].apply(lambda v: f"{v:,.2f}")
-        sold_display = sold_display.sort_values("Coste €", ascending=False)
         st.dataframe(sold_display, use_container_width=True, hide_index=True)
 
 # ===========================================================================
