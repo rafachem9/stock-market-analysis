@@ -770,6 +770,257 @@ def render_dividends_tab(data: dict):
 
 
 # =============================================================================
+# ANÁLISIS POR MERCADO
+# =============================================================================
+
+_MARKET_META = {
+    'IBEX 35':  {'label': '🇪🇸 España (IBEX 35)',  'flag': '🇪🇸', 'color': '#EF553B'},
+    'S&P 500':  {'label': '🇺🇸 EE.UU. (S&P 500)', 'flag': '🇺🇸', 'color': '#00CC96'},
+}
+
+
+def _market_kpis(df: pd.DataFrame, label: str, color: str) -> dict:
+    """Calcula KPIs agregados de un mercado."""
+    kpis: dict = {'label': label, 'color': color, 'n': len(df)}
+    for col, key in [
+        ('Rentabilidad prevista', 'avg_return'),
+        ('sharpe_ratio',          'avg_sharpe'),
+        ('volatilidad',           'avg_vol'),
+        ('Dividend Yield',        'avg_div'),
+        ('beta_calculada',        'avg_beta'),
+    ]:
+        if col in df.columns:
+            kpis[key] = df[col].mean()
+    if 'Rentabilidad prevista' in df.columns:
+        kpis['pct_positive'] = (df['Rentabilidad prevista'] > 0).mean() * 100
+    return kpis
+
+
+def _render_market_kpi_row(kpis_list: list[dict]) -> None:
+    """Fila de métricas comparativas entre mercados."""
+    cols = st.columns(len(kpis_list))
+    for col, kpis in zip(cols, kpis_list):
+        with col:
+            st.markdown(
+                f"<h3 style='color:{kpis['color']};margin-bottom:4px'>{kpis['label']}</h3>",
+                unsafe_allow_html=True,
+            )
+            st.metric("Empresas analizadas", kpis['n'])
+            if 'avg_return' in kpis:
+                st.metric("Rentabilidad media", f"{kpis['avg_return']:.1f}%")
+            if 'pct_positive' in kpis:
+                st.metric("Con rentab. positiva", f"{kpis['pct_positive']:.0f}%")
+            if 'avg_sharpe' in kpis:
+                st.metric("Sharpe medio", f"{kpis['avg_sharpe']:.2f}")
+            if 'avg_vol' in kpis:
+                st.metric("Volatilidad media", f"{kpis['avg_vol']*100:.2f}%")
+            if 'avg_div' in kpis:
+                st.metric("Dividend Yield medio", f"{kpis['avg_div']*100:.2f}%")
+            if 'avg_beta' in kpis:
+                st.metric("Beta media", f"{kpis['avg_beta']:.2f}")
+
+
+def _render_market_bar_comparison(kpis_list: list[dict]) -> None:
+    """Gráfico de barras comparando métricas clave entre mercados."""
+    metrics_map = {
+        'Rentabilidad media (%)': 'avg_return',
+        'Sharpe medio':           'avg_sharpe',
+        'Volatilidad media (%)':  'avg_vol_pct',
+        'Dividend Yield medio (%)': 'avg_div_pct',
+    }
+
+    rows = []
+    for kpis in kpis_list:
+        kpis2 = dict(kpis)
+        if 'avg_vol' in kpis2:
+            kpis2['avg_vol_pct'] = kpis2['avg_vol'] * 100
+        if 'avg_div' in kpis2:
+            kpis2['avg_div_pct'] = kpis2['avg_div'] * 100
+        for metric_label, key in metrics_map.items():
+            if key in kpis2:
+                rows.append({
+                    'Mercado': kpis2['label'],
+                    'Métrica': metric_label,
+                    'Valor': round(kpis2[key], 3),
+                    'color': kpis2['color'],
+                })
+
+    if not rows:
+        return
+
+    chart_df = pd.DataFrame(rows)
+    color_map = {k['label']: k['color'] for k in kpis_list}
+
+    fig = px.bar(
+        chart_df,
+        x='Métrica',
+        y='Valor',
+        color='Mercado',
+        barmode='group',
+        color_discrete_map=color_map,
+        text='Valor',
+        labels={'Valor': ''},
+    )
+    fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+    fig.update_layout(height=420, legend=dict(orientation='h', y=1.08))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_market_scatter(combined: pd.DataFrame, color_map: dict) -> None:
+    """Scatter Riesgo vs Rentabilidad con todas las acciones de ambos mercados."""
+    if 'volatilidad' not in combined.columns or 'Rentabilidad prevista' not in combined.columns:
+        return
+
+    plot_df = combined.dropna(subset=['volatilidad', 'Rentabilidad prevista']).copy()
+    if plot_df.empty:
+        return
+
+    hover_name = 'Empresa' if 'Empresa' in plot_df.columns else 'Ticker'
+    hover_data = {'Ticker': True, 'Mercado': True}
+    if 'sharpe_ratio' in plot_df.columns:
+        hover_data['sharpe_ratio'] = ':.2f'
+    if 'Sector' in plot_df.columns:
+        hover_data['Sector'] = True
+
+    fig = px.scatter(
+        plot_df,
+        x='volatilidad',
+        y='Rentabilidad prevista',
+        color='Mercado',
+        color_discrete_map=color_map,
+        hover_name=hover_name,
+        hover_data=hover_data,
+        labels={
+            'volatilidad': 'Volatilidad (riesgo)',
+            'Rentabilidad prevista': 'Rentabilidad prevista (%)',
+        },
+    )
+    fig.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.4)
+    fig.add_vline(
+        x=plot_df['volatilidad'].median(),
+        line_dash='dash', line_color='gray', opacity=0.4,
+    )
+    fig.update_layout(height=500, legend=dict(orientation='h', y=1.06))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("💡 Cuadrante superior izquierdo = alta rentabilidad prevista + baja volatilidad.")
+
+
+def _render_market_sector_heatmap(combined: pd.DataFrame) -> None:
+    """Heatmap: Sector × Mercado → rentabilidad media."""
+    if 'Sector' not in combined.columns or 'Rentabilidad prevista' not in combined.columns:
+        st.info("No hay datos de sector disponibles.")
+        return
+
+    pivot = (
+        combined.dropna(subset=['Sector', 'Rentabilidad prevista'])
+        .groupby(['Sector', 'Mercado'])['Rentabilidad prevista']
+        .mean()
+        .unstack('Mercado')
+        .round(1)
+    )
+    if pivot.empty:
+        return
+
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot.values,
+        x=pivot.columns.tolist(),
+        y=pivot.index.tolist(),
+        colorscale='RdYlGn',
+        text=[[f"{v:.1f}%" if pd.notna(v) else "" for v in row] for row in pivot.values],
+        texttemplate='%{text}',
+        colorbar=dict(title='Rent. (%)'),
+        zmid=0,
+    ))
+    fig.update_layout(
+        height=max(350, len(pivot) * 32),
+        xaxis_title='Mercado',
+        yaxis_title='Sector',
+        margin=dict(l=160),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_top_cross_market(combined: pd.DataFrame, color_map: dict, n: int = 15) -> None:
+    """Top N oportunidades globales (todos los mercados combinados) por Investment Score."""
+    df = combined.copy().reset_index(drop=True)
+    df['Investment Score'] = df.apply(get_investment_score, axis=1)
+    top = df.nlargest(n, 'Investment Score')
+
+    cols_want = ['Empresa', 'Ticker', 'Mercado', 'Sector',
+                 'Rentabilidad prevista', 'sharpe_ratio', 'Dividend Yield', 'Investment Score']
+    cols_ok = [c for c in cols_want if c in top.columns]
+    display = top[cols_ok].copy()
+
+    if 'Rentabilidad prevista' in display.columns:
+        display['Rentabilidad prevista'] = display['Rentabilidad prevista'].apply(
+            lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
+        )
+    if 'sharpe_ratio' in display.columns:
+        display['sharpe_ratio'] = display['sharpe_ratio'].apply(
+            lambda x: f"{x:.2f}" if pd.notna(x) else "-"
+        )
+    if 'Dividend Yield' in display.columns:
+        display['Dividend Yield'] = display['Dividend Yield'].apply(
+            lambda x: f"{x*100:.2f}%" if pd.notna(x) else "-"
+        )
+    if 'Investment Score' in display.columns:
+        display['Investment Score'] = display['Investment Score'].apply(lambda x: f"{x:.0f}/100")
+
+    st.dataframe(display, use_container_width=True, hide_index=True)
+
+
+def render_market_tab(data: dict) -> None:
+    """Pestaña de análisis comparativo por mercado / bolsa."""
+    available = {k: v for k, v in data.items() if k in _MARKET_META and not v.empty}
+
+    if not available:
+        st.info("No hay datos de mercado disponibles. Ejecuta primero `python main.py`.")
+        return
+
+    # Combinar todos los mercados en un único DataFrame
+    frames = []
+    for market_name, df in available.items():
+        meta = _MARKET_META[market_name]
+        tmp = df.copy()
+        tmp['Mercado'] = meta['label']
+        frames.append(tmp)
+    combined = pd.concat(frames, ignore_index=True)
+
+    color_map = {meta['label']: meta['color'] for k, meta in _MARKET_META.items() if k in available}
+
+    # KPIs por mercado
+    kpis_list = [
+        _market_kpis(df, _MARKET_META[name]['label'], _MARKET_META[name]['color'])
+        for name, df in available.items()
+    ]
+
+    st.subheader("📊 Resumen por Mercado")
+    _render_market_kpi_row(kpis_list)
+
+    st.markdown("---")
+
+    tab_cmp, tab_scatter, tab_heat, tab_top = st.tabs([
+        "📊 Comparativa", "📉 Riesgo/Rentabilidad", "🔥 Heatmap Sectorial", "🏆 Top Global"
+    ])
+
+    with tab_cmp:
+        st.markdown("#### Comparativa de métricas clave entre mercados")
+        _render_market_bar_comparison(kpis_list)
+
+    with tab_scatter:
+        st.markdown("#### Riesgo vs Rentabilidad — todos los valores")
+        _render_market_scatter(combined, color_map)
+
+    with tab_heat:
+        st.markdown("#### Rentabilidad media prevista por Sector y Mercado")
+        _render_market_sector_heatmap(combined)
+
+    with tab_top:
+        st.markdown("#### 🏆 Top 15 oportunidades globales (todos los mercados)")
+        _render_top_cross_market(combined, color_map, n=15)
+
+
+# =============================================================================
 # PÁGINA PRINCIPAL
 # =============================================================================
 
@@ -841,39 +1092,43 @@ def main():
     st.markdown("---")
     
     # Tabs de contenido
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "🎯 Oportunidades",
         "📈 Evolución",
-        "💰 Dividendos", 
+        "💰 Dividendos",
+        "🌍 Por Mercado",
         "🏢 Sectores",
         "📉 Riesgo/Rentabilidad",
         "⚠️ Análisis Riesgo",
         "💎 Valor"
     ])
-    
+
     with tab1:
         render_top_opportunities(df, f"Top Oportunidades {selected_index}")
-    
+
     with tab2:
         render_stock_evolution(df, selected_index)
-    
+
     with tab3:
         render_dividends_tab(data)
-    
+
     with tab4:
+        render_market_tab(data)
+
+    with tab5:
         col1, col2 = st.columns(2)
         with col1:
             render_sector_analysis(df, f"Rendimiento por Sector - {selected_index}")
         with col2:
             render_sector_performance(df)
-    
-    with tab5:
-        render_volatility_chart(df)
-    
+
     with tab6:
-        render_risk_analysis(df)
-    
+        render_volatility_chart(df)
+
     with tab7:
+        render_risk_analysis(df)
+
+    with tab8:
         render_value_stocks(df)
     
     # Tabla completa
