@@ -583,6 +583,193 @@ def render_summary_metrics(df, index_name):
 
 
 # =============================================================================
+# DIVIDENDOS PRÓXIMOS (IBEX 35 + S&P 500)
+# =============================================================================
+
+def _render_dividend_calendar(combined: pd.DataFrame):
+    """Scatter temporal: eje X = Ex-Dividend Date, eje Y = Yield."""
+    st.subheader("📅 Calendario de Ex-Dividendos")
+    hover_cols = {
+        'Ticker': True,
+        'Días hasta Ex-Div': True,
+        'Yield (%)': ':.2f',
+        'Ex-Dividend Date': '|%d %b %Y',
+    }
+    if 'Sector' in combined.columns:
+        hover_cols['Sector'] = True
+    if 'Next Dividend' in combined.columns:
+        hover_cols['Next Dividend'] = ':.4f'
+
+    fig = px.scatter(
+        combined,
+        x='Ex-Dividend Date',
+        y='Yield (%)',
+        color='Índice',
+        size=combined['Yield (%)'].clip(lower=0.1),
+        size_max=22,
+        hover_name='Empresa',
+        hover_data=hover_cols,
+        labels={'Ex-Dividend Date': 'Fecha Ex-Dividendo', 'Yield (%)': 'Dividend Yield (%)'},
+        color_discrete_map={'IBEX 35': '#EF553B', 'S&P 500': '#00CC96'},
+    )
+    fig.update_layout(height=450, hovermode='closest')
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Debes poseer la acción ANTES de la fecha Ex-Div para cobrar el dividendo. "
+        "Burbuja más grande = mayor yield."
+    )
+
+
+def _render_dividend_yield_chart(combined: pd.DataFrame):
+    """Top 25 empresas por dividend yield (barras horizontales)."""
+    st.subheader("📊 Empresas con Mayor Dividend Yield")
+    top = combined.nlargest(25, 'Yield (%)').copy()
+    top['label'] = top.apply(
+        lambda r: f"{r.get('Ticker', r.get('Empresa', ''))} ({r['Índice']})", axis=1
+    )
+    extra_hover = {}
+    if 'Next Dividend' in top.columns:
+        extra_hover['Next Dividend'] = True
+    if 'Rentabilidad prevista' in top.columns:
+        extra_hover['Rentabilidad prevista'] = True
+
+    fig = px.bar(
+        top.sort_values('Yield (%)'),
+        x='Yield (%)',
+        y='label',
+        orientation='h',
+        color='Índice',
+        text='Yield (%)',
+        hover_data={
+            'Empresa': True,
+            'Ex-Dividend Date': True,
+            **extra_hover,
+        },
+        labels={'label': ''},
+        color_discrete_map={'IBEX 35': '#EF553B', 'S&P 500': '#00CC96'},
+    )
+    fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+    fig.update_layout(height=max(420, len(top) * 28), showlegend=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_dividend_detail(df_ibex: pd.DataFrame, df_sp500: pd.DataFrame):
+    """Tablas detalladas separadas por índice."""
+    display_cols = [
+        'Empresa', 'Ticker', 'Sector', 'Ex-Dividend Date',
+        'Next Dividend', 'Dividend Yield', 'Rentabilidad prevista', 'rank_dividend',
+    ]
+
+    def _fmt(df: pd.DataFrame) -> pd.DataFrame:
+        d = df[[c for c in display_cols if c in df.columns]].copy()
+        if 'Dividend Yield' in d.columns:
+            d['Dividend Yield'] = d['Dividend Yield'].apply(
+                lambda x: f"{x * 100:.2f}%" if pd.notna(x) else "-"
+            )
+        if 'Rentabilidad prevista' in d.columns:
+            d['Rentabilidad prevista'] = d['Rentabilidad prevista'].apply(
+                lambda x: f"{x:.1f}%" if pd.notna(x) else "-"
+            )
+        if 'Ex-Dividend Date' in d.columns:
+            d['Ex-Dividend Date'] = pd.to_datetime(
+                d['Ex-Dividend Date'], errors='coerce'
+            ).dt.strftime('%d %b %Y')
+        if 'Ex-Dividend Date' in d.columns:
+            d = d.sort_values('Ex-Dividend Date')
+        return d
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### 🇪🇸 IBEX 35")
+        if not df_ibex.empty:
+            st.dataframe(_fmt(df_ibex), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay datos de dividendos para IBEX 35")
+    with col2:
+        st.markdown("#### 🇺🇸 S&P 500")
+        if not df_sp500.empty:
+            st.dataframe(_fmt(df_sp500), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay datos de dividendos para S&P 500")
+
+
+def render_dividends_tab(data: dict):
+    """Pestaña de dividendos próximos de IBEX 35 y S&P 500 combinados."""
+    div_ibex = data.get('Dividendos IBEX', pd.DataFrame())
+    div_sp500 = data.get('Dividendos SP500', pd.DataFrame())
+
+    if div_ibex.empty and div_sp500.empty:
+        st.info("No hay datos de dividendos. Ejecuta primero `python main.py`.")
+        return
+
+    # Combinar con etiqueta de índice
+    frames = []
+    for raw, label in [(div_ibex, 'IBEX 35'), (div_sp500, 'S&P 500')]:
+        if not raw.empty:
+            df = raw.copy()
+            df['Índice'] = label
+            frames.append(df)
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Normalizar fechas y calcular días
+    combined['Ex-Dividend Date'] = pd.to_datetime(combined['Ex-Dividend Date'], errors='coerce')
+    combined = combined.dropna(subset=['Ex-Dividend Date'])
+    today = pd.Timestamp.today().normalize()
+    combined['Días hasta Ex-Div'] = (combined['Ex-Dividend Date'] - today).dt.days
+    combined = combined[combined['Días hasta Ex-Div'] >= 0].sort_values('Días hasta Ex-Div').reset_index(drop=True)
+
+    # Yield en porcentaje
+    combined['Yield (%)'] = (combined['Dividend Yield'] * 100).where(
+        combined['Dividend Yield'].notna(), other=None
+    ) if 'Dividend Yield' in combined.columns else None
+
+    # Filtro de horizonte temporal
+    max_days = int(combined['Días hasta Ex-Div'].max()) if not combined.empty else 365
+    days_filter = st.slider(
+        "Mostrar dividendos en los próximos (días)",
+        min_value=30, max_value=min(365, max_days + 1),
+        value=min(180, max_days),
+        key="div_days_filter",
+    )
+    combined = combined[combined['Días hasta Ex-Div'] <= days_filter].reset_index(drop=True)
+
+    if combined.empty:
+        st.info(f"No hay dividendos registrados en los próximos {days_filter} días.")
+        return
+
+    # Métricas resumen
+    ibex_count = (combined['Índice'] == 'IBEX 35').sum()
+    sp500_count = (combined['Índice'] == 'S&P 500').sum()
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Próximos dividendos", len(combined),
+                  f"IBEX 35: {ibex_count}  ·  S&P 500: {sp500_count}")
+    with c2:
+        next_row = combined.iloc[0]
+        empresa = next_row.get('Empresa', next_row.get('Ticker', ''))
+        st.metric("Más próximo", next_row['Ex-Dividend Date'].strftime('%d %b %Y'),
+                  f"{empresa} · {next_row['Índice']}")
+    with c3:
+        if combined['Yield (%)'].notna().any():
+            st.metric("Yield medio", f"{combined['Yield (%)'].mean():.2f}%")
+    with c4:
+        if combined['Yield (%)'].notna().any():
+            max_row = combined.loc[combined['Yield (%)'].idxmax()]
+            st.metric("Mayor yield", f"{max_row['Yield (%)']:.2f}%",
+                      f"{max_row.get('Empresa', max_row.get('Ticker', ''))}")
+
+    st.markdown("---")
+
+    tab_cal, tab_yield, tab_detail = st.tabs(["📅 Calendario", "📊 Por Yield", "📋 Por Índice"])
+    with tab_cal:
+        _render_dividend_calendar(combined)
+    with tab_yield:
+        _render_dividend_yield_chart(combined)
+    with tab_detail:
+        _render_dividend_detail(div_ibex, div_sp500)
+
+
+# =============================================================================
 # PÁGINA PRINCIPAL
 # =============================================================================
 
@@ -671,11 +858,7 @@ def main():
         render_stock_evolution(df, selected_index)
     
     with tab3:
-        div_key = f"Dividendos {'IBEX' if 'IBEX' in selected_index else 'SP500'}"
-        if div_key in data:
-            render_dividend_opportunities(data[div_key], f"Próximos Dividendos {selected_index}")
-        else:
-            st.info("No hay datos de dividendos")
+        render_dividends_tab(data)
     
     with tab4:
         col1, col2 = st.columns(2)
